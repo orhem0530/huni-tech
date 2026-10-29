@@ -800,7 +800,10 @@
 
     <!-- JavaScript Application Engine -->
     <script>
-        // Global variables initialized safely
+        // Google Apps Script REST Endpoint Deployment URL
+        window.APPS_SCRIPT_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbwjjjSJ1bjeIUVqVdCT4wtGb-ONGUYzLM23SUwK4w0e72TRGvuccUs4-ax4xHMu60I4vQ/exec";
+
+        // Global state variables
         window.currentShift = 0;
         window.activeInstrument = 'guitar';
         window.activeSynthVoice = 'piano';
@@ -819,6 +822,11 @@
         window.audioElementSourceNode = null;
         window.audioAnalyserNode = null;
         window.chordifyTilesData = [];
+
+        // Live Microphone State Variables
+        window.micStream = null;
+        window.micAnalyserNode = null;
+        window.isMicListening = false;
 
         // Polyphonic Major/Minor Chord Templates
         window.CHORD_TEMPLATES = (function() {
@@ -1317,7 +1325,7 @@
             window.showToast("Audio track loaded successfully!");
         };
 
-        // Polyphonic High-Accuracy Audio Buffer Lead Sheet Generator
+        // Optimized Non-Blocking Chunked Asynchronous Lead Sheet Extractor
         window.extractFullAudioLeadSheet = function() {
             var audioElement = document.getElementById('mainAudioElement');
             if (!window.selectedAudioFile && (!audioElement || !audioElement.src)) {
@@ -1355,86 +1363,103 @@
 
                 var minPitch = 36;
                 var maxPitch = 84;
+                var h = 0;
 
-                for (var h = 0; h < totalHops; h++) {
-                    var startSample = h * hopSamples;
-                    var endSample = Math.min(startSample + hopSamples, channelData.length);
-                    var chroma = new Float32Array(12);
+                function processChunk() {
+                    var chunkSize = 5;
+                    var end = Math.min(h + chunkSize, totalHops);
 
-                    var numSamples = endSample - startSample;
-                    var step = Math.max(1, Math.floor(numSamples / 2048));
+                    for (; h < end; h++) {
+                        var startSample = h * hopSamples;
+                        var endSample = Math.min(startSample + hopSamples, channelData.length);
+                        var chroma = new Float32Array(12);
 
-                    for (var midi = minPitch; midi <= maxPitch; midi++) {
-                        var freq = 440 * Math.pow(2, (midi - 69) / 12);
-                        var pitchClass = midi % 12;
-                        var omega = (2 * Math.PI * freq) / sampleRate;
+                        var numSamples = endSample - startSample;
+                        var step = Math.max(1, Math.floor(numSamples / 2048));
 
-                        var real = 0, imag = 0;
-                        for (var i = startSample; i < endSample; i += step) {
-                            var sample = channelData[i];
-                            real += sample * Math.cos(omega * (i - startSample));
-                            imag += sample * Math.sin(omega * (i - startSample));
+                        for (var midi = minPitch; midi <= maxPitch; midi++) {
+                            var freq = 440 * Math.pow(2, (midi - 69) / 12);
+                            var pitchClass = midi % 12;
+                            var omega = (2 * Math.PI * freq) / sampleRate;
+
+                            var real = 0, imag = 0;
+                            for (var i = startSample; i < endSample; i += step) {
+                                var sample = channelData[i];
+                                real += sample * Math.cos(omega * (i - startSample));
+                                imag += sample * Math.sin(omega * (i - startSample));
+                            }
+
+                            var mag = Math.sqrt(real * real + imag * imag);
+                            var octaveWeight = 1.0 - ((midi - minPitch) / (maxPitch - minPitch)) * 0.4;
+                            chroma[pitchClass] += mag * octaveWeight;
                         }
 
-                        var mag = Math.sqrt(real * real + imag * imag);
-                        var octaveWeight = 1.0 - ((midi - minPitch) / (maxPitch - minPitch)) * 0.4;
-                        chroma[pitchClass] += mag * octaveWeight;
+                        var detectedChord = window.matchChromaToChord(chroma);
+                        var sec = Math.floor(h * hopSizeSec);
+
+                        if (sec === 0) currentSection = "INTRO";
+                        else if (sec === Math.floor(duration * 0.18)) currentSection = "VERSE 1";
+                        else if (sec === Math.floor(duration * 0.42)) currentSection = "CHORUS";
+                        else if (sec === Math.floor(duration * 0.70)) currentSection = "BRIDGE";
+
+                        if (detectedChord !== "--") {
+                            detectedProgression.push({ time: sec, chord: detectedChord, section: currentSection });
+                        }
                     }
 
-                    var detectedChord = window.matchChromaToChord(chroma);
-                    var sec = Math.floor(h * hopSizeSec);
-
-                    if (sec === 0) currentSection = "INTRO";
-                    else if (sec === Math.floor(duration * 0.18)) currentSection = "VERSE 1";
-                    else if (sec === Math.floor(duration * 0.42)) currentSection = "CHORUS";
-                    else if (sec === Math.floor(duration * 0.70)) currentSection = "BRIDGE";
-
-                    if (detectedChord !== "--") {
-                        detectedProgression.push({ time: sec, chord: detectedChord, section: currentSection });
-                    }
-
-                    var pct = Math.floor(((h + 1) / totalHops) * 100);
+                    var pct = Math.floor((h / totalHops) * 100);
                     progressBar.style.width = pct + "%";
                     progressPercent.innerText = pct + "%";
+
+                    if (h < totalHops) {
+                        setTimeout(processChunk, 0);
+                    } else {
+                        finalizeLeadSheet();
+                    }
                 }
 
-                var trackTitle = document.getElementById('audioTrackTitle').innerText || "Uploaded Track";
-                var generatedSheet = "AUDIO EXTRACTED LEAD SHEET (" + trackTitle + ")\n\n";
-                var lastSec = "";
-                var lineChords = [];
+                function finalizeLeadSheet() {
+                    var trackTitle = document.getElementById('audioTrackTitle').innerText || "Uploaded Track";
+                    var generatedSheet = "AUDIO EXTRACTED LEAD SHEET (" + trackTitle + ")\n\n";
+                    var lastSec = "";
+                    var lineChords = [];
 
-                detectedProgression.forEach(function(item) {
-                    if (item.section !== lastSec) {
-                        if (lineChords.length > 0) {
+                    detectedProgression.forEach(function(item) {
+                        if (item.section !== lastSec) {
+                            if (lineChords.length > 0) {
+                                generatedSheet += lineChords.join("   ") + "\n";
+                                lineChords = [];
+                            }
+                            generatedSheet += "\n[" + window.formatTime(item.time) + "] " + item.section + ":\n";
+                            lastSec = item.section;
+                        }
+
+                        if (lineChords.length === 0) {
+                            lineChords.push("[" + window.formatTime(item.time) + "] " + item.chord);
+                        } else {
+                            lineChords.push(item.chord);
+                        }
+
+                        if (lineChords.length >= 4) {
                             generatedSheet += lineChords.join("   ") + "\n";
                             lineChords = [];
                         }
-                        generatedSheet += "\n[" + window.formatTime(item.time) + "] " + item.section + ":\n";
-                        lastSec = item.section;
-                    }
+                    });
 
-                    if (lineChords.length === 0) {
-                        lineChords.push("[" + window.formatTime(item.time) + "] " + item.chord);
-                    } else {
-                        lineChords.push(item.chord);
-                    }
-
-                    if (lineChords.length >= 4) {
+                    if (lineChords.length > 0) {
                         generatedSheet += lineChords.join("   ") + "\n";
-                        lineChords = [];
                     }
-                });
 
-                if (lineChords.length > 0) {
-                    generatedSheet += lineChords.join("   ") + "\n";
+                    window.setSongEditorContent(generatedSheet);
+                    window.showToast("⚡ High-accuracy lead sheet generated!");
+                    statusBtn.disabled = false;
+                    progressContainer.classList.add('hidden');
                 }
 
-                window.setSongEditorContent(generatedSheet);
-                window.showToast("⚡ High-accuracy lead sheet generated!");
+                processChunk();
             }).catch(function(err) {
                 console.error("Audio extraction error:", err);
                 window.showToast("Extraction failed: " + (err.message || err));
-            }).finally(function() {
                 statusBtn.disabled = false;
                 progressContainer.classList.add('hidden');
             });
@@ -1658,22 +1683,22 @@
             return songName.toUpperCase() + " - " + artist.toUpperCase() + " (Key of " + I + ")\n" +
                    "Harmonic progression synchronized to YouTube video timeline.\n\n" +
                    "[0:00] INTRO:\n" +
-                   "[0:00] " + I + "                      " + IV + "                " + I + "\n\n" +
+                   "[0:00] " + I + "                      " + IV + " " + I + "\n\n" +
                    "[0:15] VERSE 1:\n" +
-                   "[0:15] " + I + "                                       " + IV + "\n" +
+                   "[0:15] " + I + " " + IV + "\n" +
                    "Line 1 for " + songName + "...\n" +
-                   "[0:28] " + vi + "                                      " + V + "\n" +
+                   "[0:28] " + vi + " " + V + "\n" +
                    "Line 2 continuing in progression...\n\n" +
                    "[0:45] CHORUS:\n" +
-                   "[0:45] " + IV + "                                       " + I + "\n" +
+                   "[0:45] " + IV + " " + I + "\n" +
                    "Chorus section for " + songName + "\n" +
-                   "[1:02] " + V + "                                       " + vi + "\n" +
+                   "[1:02] " + V + " " + vi + "\n" +
                    "Harmonic progression continues...\n\n" +
                    "[1:25] VERSE 2:\n" +
-                   "[1:25] " + I + "                                       " + IV + "\n" +
+                   "[1:25] " + I + " " + IV + "\n" +
                    "Verse 2 section marker...\n\n" +
                    "[1:45] BRIDGE:\n" +
-                   "[1:45] " + IV + "               " + I + "               " + V + "                " + vi + "\n\n" +
+                   "[1:45] " + IV + " " + I + " " + V + " " + vi + "\n\n" +
                    "[2:10] OUTRO:\n" +
                    "[2:10] " + I + " - " + IV + " - " + V + " - " + vi;
         };
@@ -1833,23 +1858,30 @@
             return activeChord;
         };
 
+        // Optimized YouTube Sync Loop with Cached DOM Node References
         window.startYouTubeSyncTracker = function() {
             if (window.ytSyncInterval) clearInterval(window.ytSyncInterval);
+            
+            var timeDispEl = document.getElementById('ytTimeDisplay');
+            var stageTimeEl = document.getElementById('stageTimeTracker');
+            var progressEl = document.getElementById('ytProgressBar');
+            var detectedChordEl = document.getElementById('ytDetectedChord');
+
             window.ytSyncInterval = setInterval(function() {
                 if (window.ytPlayer && typeof window.ytPlayer.getCurrentTime === 'function' && typeof window.ytPlayer.getDuration === 'function') {
                     var currentTime = window.ytPlayer.getCurrentTime() || 0;
                     var duration = window.ytPlayer.getDuration() || 1;
 
                     var formattedTracker = window.formatTime(currentTime) + " / " + window.formatTime(duration);
-                    document.getElementById('ytTimeDisplay').innerText = formattedTracker;
-                    document.getElementById('stageTimeTracker').innerText = formattedTracker;
+                    if (timeDispEl) timeDispEl.innerText = formattedTracker;
+                    if (stageTimeEl) stageTimeEl.innerText = formattedTracker;
 
                     var percent = (currentTime / duration) * 100;
-                    document.getElementById('ytProgressBar').style.width = percent + "%";
+                    if (progressEl) progressEl.style.width = percent + "%";
 
                     var activeChord = window.getCurrentChordFromSongChart(currentTime) || "G";
 
-                    document.getElementById('ytDetectedChord').innerText = activeChord;
+                    if (detectedChordEl) detectedChordEl.innerText = activeChord;
                     
                     var rootNote = activeChord.split('/')[0].replace(/(m|maj|min|dim|aug|sus|add)?\d*/g, '');
                     window.drawChromaCanvas('ytChromaCanvas', rootNote);
@@ -1868,8 +1900,93 @@
             window.showToast("Transferred YouTube lead sheet to Stage View!");
         };
 
+        // Complete Live Microphone Audio Stream Listener
         window.toggleMicListening = function() {
-            window.showToast("Live Mic listening requires web HTTPS context.");
+            if (window.isMicListening) {
+                window.stopMicListening();
+                return;
+            }
+
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                var alertEl = document.getElementById('micPermissionAlert');
+                if (alertEl) alertEl.classList.remove('hidden');
+                window.showToast("Microphone capture requires secure HTTPS web hosting.");
+                return;
+            }
+
+            navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+                .then(function(stream) {
+                    window.micStream = stream;
+                    var ctx = window.getAudioContext();
+                    var source = ctx.createMediaStreamSource(stream);
+                    
+                    window.micAnalyserNode = ctx.createAnalyser();
+                    window.micAnalyserNode.fftSize = 4096;
+                    source.connect(window.micAnalyserNode);
+
+                    window.isMicListening = true;
+                    document.getElementById('micBtnText').innerText = "Stop Listening";
+                    document.getElementById('micToggleBtn').className = "btn text-xs bg-rose-600 hover:bg-rose-500 px-3 py-1.5";
+                    
+                    var alertEl = document.getElementById('micPermissionAlert');
+                    if (alertEl) alertEl.classList.add('hidden');
+                    
+                    window.startMicAnalysisLoop();
+                    window.showToast("Live Microphone Recognition Active!");
+                })
+                .catch(function(err) {
+                    console.error("Mic permission error:", err);
+                    var alertEl = document.getElementById('micPermissionAlert');
+                    if (alertEl) alertEl.classList.remove('hidden');
+                    window.showToast("Microphone access blocked by browser.");
+                });
+        };
+
+        window.stopMicListening = function() {
+            window.isMicListening = false;
+            if (window.micStream) {
+                window.micStream.getTracks().forEach(function(track) { track.stop(); });
+                window.micStream = null;
+            }
+            document.getElementById('micBtnText').innerText = "Start Listening";
+            document.getElementById('micToggleBtn').className = "btn text-xs bg-emerald-600 hover:bg-emerald-500 px-3 py-1.5";
+            document.getElementById('micDetectedChord').innerText = "--";
+            document.getElementById('micConfidenceDisplay').innerText = "Confidence: --%";
+            window.showToast("Microphone capture stopped.");
+        };
+
+        window.startMicAnalysisLoop = function() {
+            function processMicFrame() {
+                if (!window.isMicListening || !window.micAnalyserNode) return;
+
+                var bufferLength = window.micAnalyserNode.frequencyBinCount;
+                var frequencyData = new Float32Array(bufferLength);
+                window.micAnalyserNode.getFloatFrequencyData(frequencyData);
+
+                var chroma = new Float32Array(12);
+                var ctx = window.getAudioContext();
+                var sampleRate = ctx.sampleRate;
+
+                for (var midi = 36; midi <= 84; midi++) {
+                    var freq = 440 * Math.pow(2, (midi - 69) / 12);
+                    var bin = Math.round((freq * window.micAnalyserNode.fftSize) / sampleRate);
+                    if (bin < bufferLength) {
+                        var db = frequencyData[bin];
+                        var mag = Math.max(0, db + 100);
+                        chroma[midi % 12] += mag;
+                    }
+                }
+
+                var detected = window.matchChromaToChord(chroma);
+                if (detected !== "--") {
+                    document.getElementById('micDetectedChord').innerText = detected;
+                    window.drawChromaCanvas('micChromaCanvas', detected.replace('m', ''));
+                }
+
+                requestAnimationFrame(processMicFrame);
+            }
+
+            requestAnimationFrame(processMicFrame);
         };
 
         /* Setlist Storage */
@@ -2097,22 +2214,44 @@
             document.getElementById("fileNameDisplay").innerText = "No file chosen (.docx, .doc, .txt, .pro)";
         };
 
+        /* Google Drive REST Endpoint Integration Handlers */
         window.fetchDriveFiles = function() {
             var select = document.getElementById('driveSelect');
-            if (select) select.innerHTML = '<option value="">-- Fetching Shared Drive Songs... --</option>';
+            if (!select) return;
 
+            select.innerHTML = '<option value="">-- Fetching Shared Drive Songs... --</option>';
+
+            // 1. Native Google Apps Script execution fallback
             if (typeof google !== 'undefined' && google.script && google.script.run) {
                 google.script.run
                     .withSuccessHandler(window.populateDriveDropdown)
                     .withFailureHandler(function(err) {
-                        console.error("Drive fetch error:", err);
-                        var errMsg = err.message || err.toString();
-                        if (select) select.innerHTML = '<option value="">⚠️ Error: ' + window.escapeHtml(errMsg) + '</option>';
-                        window.showToast("Drive Fetch Failed: " + errMsg);
+                        select.innerHTML = '<option value="">⚠️ Error fetching files</option>';
+                        window.showToast("Drive Fetch Failed: " + (err.message || err));
                     })
                     .getDriveSongFiles();
+                return;
+            }
+
+            // 2. Direct HTTP GET request for Vercel / GitHub Pages static deployments
+            if (window.APPS_SCRIPT_WEBAPP_URL) {
+                fetch(window.APPS_SCRIPT_WEBAPP_URL + "?action=getFiles")
+                    .then(function(res) { return res.json(); })
+                    .then(function(files) {
+                        if (files.error) {
+                            select.innerHTML = '<option value="">⚠️ Access Error</option>';
+                            window.showToast("Drive API Error: " + files.error);
+                            return;
+                        }
+                        window.populateDriveDropdown(files);
+                    })
+                    .catch(function(err) {
+                        console.error("Drive Fetch Error:", err);
+                        select.innerHTML = '<option value="">⚠️ Network Fetch Error</option>';
+                        window.showToast("Failed to connect to Google Drive API.");
+                    });
             } else {
-                if (select) select.innerHTML = '<option value="">-- Shared Google Drive Folder (Preview) --</option>';
+                select.innerHTML = '<option value="">-- Configure Google Drive Backend --</option>';
             }
         };
 
@@ -2121,7 +2260,7 @@
             if (!select) return;
 
             if (!files || files.length === 0) {
-                select.innerHTML = '<option value="">-- No files found or folder inaccessible --</option>';
+                select.innerHTML = '<option value="">-- No files found or folder empty --</option>';
                 return;
             }
 
@@ -2145,8 +2284,21 @@
                 google.script.run.withSuccessHandler(function(content) {
                     window.setSongEditorContent(window.sanitizeToPlainText(content));
                 }).getDriveFileContent(fileId);
-            } else {
-                window.showToast("Google Drive requires Google Apps Script context.");
+            } else if (window.APPS_SCRIPT_WEBAPP_URL) {
+                window.showToast("Downloading chart from Drive...");
+                fetch(window.APPS_SCRIPT_WEBAPP_URL + "?action=getContent&fileId=" + encodeURIComponent(fileId))
+                    .then(function(res) { return res.text(); })
+                    .then(function(content) {
+                        if (content.startsWith("Error reading file:")) {
+                            window.showToast(content);
+                            return;
+                        }
+                        window.setSongEditorContent(window.sanitizeToPlainText(content));
+                    })
+                    .catch(function(err) {
+                        console.error("Drive Load Error:", err);
+                        window.showToast("Failed to fetch file content.");
+                    });
             }
         };
 
@@ -2175,11 +2327,13 @@
         };
 
         window.resizeCanvasToDisplaySize = function(canvas) {
-            if (!canvas) return false;
+            if (!canvas || canvas.offsetParent === null) return false;
             var dpr = window.devicePixelRatio || 1;
             var rect = canvas.getBoundingClientRect();
             var displayWidth = Math.floor(rect.width || canvas.clientWidth || 300);
             var displayHeight = Math.floor(rect.height || canvas.clientHeight || 100);
+
+            if (displayWidth === 0 || displayHeight === 0) return false;
 
             if (canvas.width !== displayWidth * dpr || canvas.height !== displayHeight * dpr) {
                 canvas.width = displayWidth * dpr;
