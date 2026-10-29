@@ -1,0 +1,1111 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+    <title>Orhem's Ideas - Audio Lead Sheet Extractor & Transposer</title>
+
+    <!-- Mammoth JS & JSZip for Word document (.docx) text extraction -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#f0f9ff',
+                            400: '#38bdf8',
+                            500: '#0ea5e9',
+                            600: '#0284c7',
+                            700: '#0369a1',
+                            accent: '#818cf8',
+                            rose: '#f43f5e',
+                            emerald: '#10b981',
+                            amber: '#f59e0b'
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'Fira Code', 'Courier New', 'monospace']
+                    }
+                }
+            }
+        };
+    </script>
+
+    <!-- Google Fonts, Lucide Icons & YouTube IFrame API -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://www.youtube.com/iframe_api"></script>
+
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: rgba(30, 41, 59, 0.75);
+            --card-border: rgba(255, 255, 255, 0.12);
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --accent: #38bdf8;
+            --accent-hover: #0284c7;
+            --chord-color: #f43f5e;
+            --output-bg: #020617;
+            --panel-bg: rgba(15, 23, 42, 0.6);
+            --shadow-lg: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+        }
+
+        body.light-mode {
+            --bg-color: #f1f5f9;
+            --card-bg: rgba(255, 255, 255, 0.9);
+            --card-border: rgba(203, 213, 225, 0.8);
+            --text-main: #0f172a;
+            --text-muted: #64748b;
+            --accent: #0284c7;
+            --accent-hover: #0369a1;
+            --chord-color: #e11d48;
+            --output-bg: #ffffff;
+            --panel-bg: rgba(241, 245, 249, 0.8);
+            --shadow-lg: 0 10px 25px -5px rgba(0, 0, 0, 0.08);
+        }
+
+        * { 
+            box-sizing: border-box; 
+            touch-action: manipulation;
+        }
+
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            max-width: 100vw;
+            overflow-x: hidden !important;
+            overflow-y: auto !important;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            transition: background-color 0.3s, color 0.3s;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .card {
+            background: var(--card-bg);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid var(--card-border);
+            border-radius: 16px;
+            padding: 16px;
+            box-shadow: var(--shadow-lg);
+            width: 100%;
+            max-width: 100%;
+        }
+
+        @media (min-width: 640px) {
+            .card { padding: 20px; }
+        }
+
+        select, textarea, input[type="text"], input[type="number"] {
+            width: 100%;
+            max-width: 100%;
+            padding: 10px 14px;
+            border-radius: 10px;
+            border: 1px solid var(--card-border);
+            background: var(--panel-bg);
+            color: var(--text-main);
+            font-family: inherit;
+            font-size: 0.875rem;
+            outline: none;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        select:focus, textarea:focus, input[type="text"]:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.25);
+        }
+
+        textarea#songInput {
+            height: 220px;
+            font-family: 'JetBrains Mono', 'Courier New', Courier, monospace !important;
+            font-size: clamp(0.75rem, 2.2vw, 0.92rem) !important;
+            line-height: 1.6 !important;
+            letter-spacing: 0px !important;
+            font-weight: 500 !important;
+            resize: vertical;
+            white-space: pre !important;
+            word-wrap: normal !important;
+            overflow-x: auto;
+        }
+
+        pre#output {
+            background: var(--output-bg);
+            border: 1px solid var(--card-border);
+            padding: 16px;
+            border-radius: 16px;
+            font-family: 'JetBrains Mono', 'Courier New', Courier, monospace !important;
+            font-size: clamp(0.78rem, 2.5vw, 1.05rem);
+            line-height: 1.7;
+            white-space: pre !important;
+            overflow-x: auto;
+            overflow-y: auto;
+            color: var(--text-main);
+            box-shadow: inset 0 2px 8px rgba(0,0,0,0.3);
+            max-height: 480px;
+            min-height: 260px;
+            scroll-behavior: smooth;
+            position: relative;
+            width: 100%;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .stage-line {
+            display: block;
+            padding: 2px 6px;
+            border-radius: 6px;
+            transition: all 0.25s ease-in-out;
+            word-break: normal;
+        }
+
+        .stage-line.active-playing-line {
+            background: rgba(14, 165, 233, 0.22);
+            border-left: 4px solid #38bdf8;
+            box-shadow: 0 0 15px rgba(56, 189, 248, 0.35);
+            transform: scale(1.008);
+        }
+
+        /* Chordify Tile Styles */
+        .chordify-tile {
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 12px;
+            padding: 10px 8px;
+            text-align: center;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            user-select: none;
+            cursor: pointer;
+        }
+
+        .chordify-tile.active-tile {
+            border-color: #38bdf8;
+            background: rgba(14, 165, 233, 0.25);
+            box-shadow: 0 0 18px rgba(56, 189, 248, 0.45);
+            transform: scale(1.05);
+            z-index: 10;
+        }
+
+        .chord {
+            color: var(--chord-color);
+            font-weight: 800;
+            cursor: pointer;
+            padding: 0 2px;
+            border-radius: 4px;
+            transition: background-color 0.15s, transform 0.15s;
+            display: inline-block;
+        }
+
+        .chord:hover, .chord:active {
+            background-color: rgba(244, 63, 94, 0.25);
+            transform: translateY(-1px);
+        }
+
+        .sticky-controls {
+            position: sticky;
+            top: 8px;
+            z-index: 100;
+            background: var(--card-bg);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--card-border);
+            padding: 8px 12px;
+            border-radius: 14px;
+            box-shadow: var(--shadow-lg);
+            width: 100%;
+        }
+
+        .btn {
+            background: var(--accent);
+            color: #ffffff;
+            border: none;
+            padding: 8px 12px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            border-radius: 10px;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            transition: all 0.2s ease;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            min-height: 38px;
+            user-select: none;
+        }
+
+        .btn:hover, .btn:active {
+            background: var(--accent-hover);
+            transform: translateY(-1px);
+        }
+
+        .btn-secondary {
+            background: rgba(148, 163, 184, 0.15);
+            color: var(--text-main);
+            border: 1px solid var(--card-border);
+            box-shadow: none;
+        }
+
+        .btn-secondary:hover, .btn-secondary:active {
+            background: rgba(148, 163, 184, 0.25);
+        }
+
+        .btn-danger {
+            background: rgba(244, 63, 94, 0.2);
+            color: var(--chord-color);
+            border: 1px solid rgba(244, 63, 94, 0.4);
+            box-shadow: none;
+        }
+
+        .btn-danger:hover, .btn-danger:active {
+            background: rgba(244, 63, 94, 0.35);
+        }
+
+        .pill-btn {
+            padding: 6px 12px;
+            border: none;
+            background: transparent;
+            color: var(--text-muted);
+            font-weight: 600;
+            font-size: 0.8rem;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.2s;
+            white-space: nowrap;
+            min-height: 38px;
+        }
+
+        .pill-btn.active {
+            background: var(--accent);
+            color: #ffffff;
+            box-shadow: 0 2px 10px rgba(14, 165, 233, 0.3);
+        }
+
+        .badge {
+            background: rgba(56, 189, 248, 0.15);
+            color: var(--accent);
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        .badge-key {
+            background: rgba(244, 63, 94, 0.15);
+            color: var(--chord-color);
+            padding: 6px 10px;
+            border-radius: 8px;
+            font-size: 0.8rem;
+            font-weight: 700;
+        }
+
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.8); }
+        ::-webkit-scrollbar-thumb { background: rgba(56, 189, 248, 0.3); border-radius: 4px; }
+
+        @media print {
+            body { background: white !important; color: black !important; padding: 0; }
+            header, .no-print, .sticky-controls, .card { display: none !important; }
+            pre#output { 
+                border: none; 
+                background: transparent; 
+                padding: 0; 
+                font-size: 11pt; 
+                color: black !important; 
+                max-height: none !important;
+                overflow: visible !important;
+            }
+            .stage-line { 
+                page-break-inside: avoid !important; 
+                break-inside: avoid !important; 
+            }
+            .chord { color: #d93025 !important; font-weight: bold; }
+        }
+    </style>
+</head>
+<body class="p-2 sm:p-4 md:p-6 lg:p-8">
+
+    <div class="max-w-7xl mx-auto space-y-4 sm:space-y-6 w-full overflow-hidden">
+
+        <!-- Application Header -->
+        <header class="flex justify-between items-center pb-3 sm:pb-4 border-b border-slate-700/60 no-print gap-2">
+            <div class="flex items-center space-x-2 sm:space-x-3">
+                <div class="relative w-11 h-11 sm:w-13 sm:h-13 flex-shrink-0">
+                    <img src="https://lh3.googleusercontent.com/d/1BrDaDUqdbq5jP-iXQMYIDwXdjEGCVXZE" 
+                         alt="Orhem's Ideas Logo" 
+                         class="w-11 h-11 sm:w-13 sm:h-13 rounded-full object-cover border-2 border-brand-400/80 shadow-lg shadow-brand-500/30 transition-transform duration-300 hover:scale-105">
+                </div>
+                <div>
+                    <h1 class="text-base sm:text-2xl font-extrabold tracking-tight text-white flex items-center space-x-1.5 sm:space-x-2">
+                        <span>Orhem's Ideas</span>
+                        <span class="text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 rounded-full bg-brand-500/20 text-brand-400 font-mono border border-brand-500/30">v6.3 Grid Sync</span>
+                    </h1>
+                    <p class="text-[10px] sm:text-xs text-slate-400 truncate max-w-[220px] sm:max-w-none">Serve • Help • Create • Grow | Lead Sheet & Audio Studio</p>
+                </div>
+            </div>
+
+            <div class="flex items-center space-x-2 flex-shrink-0">
+                <button type="button" onclick="window.toggleDarkMode()" class="btn btn-secondary text-xs p-2 sm:px-3">
+                    <i data-lucide="sun-moon" class="w-4 h-4 pointer-events-none"></i>
+                    <span class="hidden md:inline pointer-events-none">Theme</span>
+                </button>
+            </div>
+        </header>
+
+        <!-- Navigation Tabs -->
+        <div class="flex items-center space-x-1.5 overflow-x-auto no-scrollbar pb-1 no-print -mx-2 px-2 sm:mx-0 sm:px-0">
+            <button type="button" onclick="window.switchTab('audio')" id="tab-btn-audio" class="pill-btn flex items-center space-x-1.5 py-2 px-3 flex-shrink-0 cursor-pointer">
+                <i data-lucide="sparkles" class="w-3.5 h-3.5 text-brand-400 pointer-events-none"></i>
+                <span class="pointer-events-none">Audio Extractor</span>
+            </button>
+            <button type="button" onclick="window.switchTab('youtube')" id="tab-btn-youtube" class="pill-btn active flex items-center space-x-1.5 py-2 px-3 flex-shrink-0 cursor-pointer">
+                <i data-lucide="youtube" class="w-3.5 h-3.5 text-rose-500 pointer-events-none"></i>
+                <span class="pointer-events-none">YouTube Sync</span>
+            </button>
+            <button type="button" onclick="window.switchTab('docs')" id="tab-btn-docs" class="pill-btn flex items-center space-x-1.5 py-2 px-3 flex-shrink-0 cursor-pointer">
+                <i data-lucide="file-text" class="w-3.5 h-3.5 text-sky-400 pointer-events-none"></i>
+                <span class="pointer-events-none">Presets & Docs</span>
+            </button>
+            <button type="button" onclick="window.switchTab('mic')" id="tab-btn-mic" class="pill-btn flex items-center space-x-1.5 py-2 px-3 flex-shrink-0 cursor-pointer">
+                <i data-lucide="mic" class="w-3.5 h-3.5 text-emerald-400 pointer-events-none"></i>
+                <span class="pointer-events-none">Live Mic</span>
+            </button>
+        </div>
+
+        <!-- Main Dual-Column Layout -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-6 items-start">
+            
+            <!-- Left Workspace Column -->
+            <div class="lg:col-span-6 space-y-4 w-full min-w-0">
+                
+                <!-- Audio Extractor Tab Panel -->
+                <div id="tab-audio" class="tab-content hidden flex-col space-y-4 no-print" style="display: none;">
+                    <div class="card space-y-4">
+                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                            <div>
+                                <h3 class="font-bold text-sm sm:text-base text-white flex items-center space-x-2">
+                                    <i data-lucide="file-audio" class="w-4 h-4 sm:w-5 sm:h-5 text-brand-400"></i>
+                                    <span>Offline Audio Buffer Extractor</span>
+                                </h3>
+                                <p class="text-[11px] sm:text-xs text-slate-400">Upload MP3/WAV/M4A audio to scan track chords via DFT chromagram energy.</p>
+                            </div>
+                            <span id="audioExtractStatus" class="text-[10px] sm:text-xs font-mono px-2 py-0.5 rounded-lg bg-brand-500/10 text-brand-400 border border-brand-500/20 w-fit">Ready</span>
+                        </div>
+
+                        <div id="audioDropZone" onclick="document.getElementById('audioFileInput').click()" class="border-2 border-dashed border-slate-700 hover:border-brand-400 rounded-xl p-4 sm:p-6 text-center cursor-pointer transition-all bg-slate-950/40 flex flex-col items-center space-y-1.5">
+                            <i data-lucide="upload-cloud" class="w-7 h-7 sm:w-8 sm:h-8 text-brand-400"></i>
+                            <span class="text-xs font-semibold text-slate-200">Tap or drag audio track here (.mp3, .wav, .m4a)</span>
+                            <span id="audioFileName" class="text-[10px] sm:text-[11px] text-slate-400">Full spectral chromagram DFT analysis</span>
+                            <input type="file" id="audioFileInput" accept="audio/*" class="hidden" onchange="window.handleAudioFileSelect(event)">
+                        </div>
+
+                        <div id="audioPlayerWidget" class="hidden space-y-4">
+                            <div class="bg-slate-950 p-3 sm:p-4 rounded-xl border border-slate-800 space-y-3">
+                                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                    <div class="flex items-center space-x-3">
+                                        <button type="button" onclick="window.toggleAudioPlayPause()" id="audioPlayBtn" class="btn text-xs bg-brand-600 hover:bg-brand-500 px-3 py-1.5">
+                                            <i data-lucide="play" class="w-3.5 h-3.5"></i>
+                                            <span>Play Track</span>
+                                        </button>
+                                        <div>
+                                            <span id="audioTrackTitle" class="text-xs font-bold text-white block truncate max-w-[180px]">Uploaded Track</span>
+                                            <span id="audioTimeDisplay" class="text-[10px] font-mono text-slate-400">0:00 / 0:00</span>
+                                        </div>
+                                    </div>
+
+                                    <button type="button" onclick="window.extractFullAudioLeadSheet()" id="extractLeadSheetBtn" class="btn text-xs bg-emerald-600 hover:bg-emerald-500 py-2 px-3 font-bold flex items-center space-x-2 w-full sm:w-auto">
+                                        <i data-lucide="wand-2" class="w-4 h-4"></i>
+                                        <span>⚡ Generate Lead Sheet</span>
+                                    </button>
+                                </div>
+
+                                <div id="extractProgressBarContainer" class="hidden space-y-1">
+                                    <div class="flex justify-between text-[10px] font-mono text-brand-400">
+                                        <span>Scanning Frequency Spectrum...</span>
+                                        <span id="extractPercent">0%</span>
+                                    </div>
+                                    <div class="w-full h-2 bg-slate-900 rounded-full overflow-hidden border border-slate-800">
+                                        <div id="extractProgressBar" class="h-full bg-gradient-to-r from-brand-500 to-emerald-400 w-0 transition-all duration-150"></div>
+                                    </div>
+                                </div>
+
+                                <audio id="mainAudioElement" class="w-full h-8 mt-1" controls></audio>
+                            </div>
+
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-3 items-center">
+                                <div class="md:col-span-2 bg-slate-950 p-3 rounded-xl border border-slate-800 h-28 sm:h-32">
+                                    <span class="text-[9px] sm:text-[10px] font-bold uppercase text-slate-400 block mb-1">12-Tone Spectral Chromagram</span>
+                                    <canvas id="fileChromaCanvas" class="w-full h-20 sm:h-24"></canvas>
+                                </div>
+                                <div class="bg-slate-950 p-3 sm:p-4 rounded-xl border border-slate-800 flex flex-col items-center justify-center text-center space-y-1.5">
+                                    <span class="text-[9px] sm:text-[10px] font-bold uppercase text-slate-500">Live Playing Chord</span>
+                                    <span id="fileDetectedChord" class="text-3xl sm:text-4xl font-extrabold font-mono text-brand-400">--</span>
+                                    <button type="button" onclick="window.captureCurrentAudioChord()" class="btn btn-secondary text-xs py-1 px-3 w-full">Stamp Chord</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- YouTube Link Sync Tab Panel -->
+                <div id="tab-youtube" class="tab-content flex-col space-y-4 no-print" style="display: flex;">
+                    <div class="card space-y-3 sm:space-y-4">
+                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
+                            <div>
+                                <h3 class="font-bold text-sm sm:text-base text-white flex items-center space-x-2">
+                                    <i data-lucide="youtube" class="w-4 h-4 sm:w-5 sm:h-5 text-rose-500"></i>
+                                    <span>YouTube Smart Harmonic Detector</span>
+                                </h3>
+                                <p class="text-[11px] sm:text-xs text-slate-400">Stream YouTube video & auto-sync accurate track progression.</p>
+                            </div>
+                            <span id="ytSyncStatus" class="text-[10px] sm:text-xs font-mono px-2 py-0.5 rounded-lg bg-rose-500/10 text-rose-400 border border-rose-500/20 w-fit">Ready</span>
+                        </div>
+
+                        <div class="flex flex-col sm:flex-row gap-2">
+                            <input type="text" id="youtubeUrlInput" value="https://www.youtube.com/watch?v=A_MJc8QoZcE" placeholder="Paste YouTube link or Video ID..." class="flex-1 text-xs">
+                            <button type="button" id="analyzeTrackBtn" onclick="window.analyzeYouTubeLink()" class="btn text-xs bg-rose-600 hover:bg-rose-500 whitespace-nowrap">
+                                <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
+                                <span>Analyze Track</span>
+                            </button>
+                        </div>
+
+                        <div class="aspect-video bg-slate-950 rounded-xl overflow-hidden border border-slate-800 relative p-1 w-full">
+                            <div id="youtubePlayerContainer" class="w-full h-full rounded-lg overflow-hidden flex items-center justify-center">
+                                <div id="ytPlayerIframeTarget" class="w-full h-full"></div>
+                            </div>
+                        </div>
+
+                        <div class="bg-slate-950 p-3 sm:p-4 rounded-xl border border-slate-800 flex flex-col space-y-2.5">
+                            <div class="flex justify-between items-start">
+                                <div class="min-w-0 flex-1 pr-2">
+                                    <span class="text-[9px] font-bold uppercase text-slate-500 block">YouTube Video Track</span>
+                                    <h4 id="ytVideoTitle" class="text-xs sm:text-sm font-bold text-white truncate">Goodness of God - Bethel Music</h4>
+                                    <span id="ytVideoAuthor" class="text-[10px] sm:text-xs text-slate-400 block truncate">Bethel Music</span>
+                                </div>
+                                <div class="text-right flex-shrink-0">
+                                    <span class="text-[9px] font-bold uppercase text-slate-500 block">Active Chord</span>
+                                    <span id="ytDetectedChord" class="text-2xl sm:text-3xl font-extrabold font-mono text-rose-400">G</span>
+                                </div>
+                            </div>
+
+                            <div>
+                                <div class="flex justify-between text-[10px] font-mono text-slate-400 mb-1">
+                                    <span>Progression Timeline</span>
+                                    <span id="ytTimeDisplay">0:00 / 0:00</span>
+                                </div>
+                                <div class="w-full h-2.5 bg-slate-900 rounded-full overflow-hidden border border-slate-800 relative">
+                                    <div id="ytProgressBar" class="h-full bg-gradient-to-r from-rose-500 via-brand-500 to-emerald-400 w-0 transition-all duration-300"></div>
+                                </div>
+                            </div>
+
+                            <div>
+                                <span class="text-[9px] font-bold uppercase text-slate-400 block mb-1">Harmonic Pitch Profile</span>
+                                <canvas id="ytChromaCanvas" class="w-full h-12 sm:h-16"></canvas>
+                            </div>
+
+                            <button type="button" onclick="window.syncYouTubeProgressionToEditor()" class="btn text-xs bg-emerald-600 hover:bg-emerald-500 py-2 w-full flex items-center justify-center space-x-1.5 font-bold">
+                                <i data-lucide="arrow-right-left" class="w-3.5 h-3.5"></i>
+                                <span>Sync Sheet to Stage View</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Documents & Presets Tab Panel -->
+                <div id="tab-docs" class="tab-content hidden flex-col space-y-4 no-print" style="display: none;">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                        <div class="card flex flex-col justify-between space-y-3">
+                            <div>
+                                <div class="flex items-center space-x-2 mb-1.5 text-brand-400">
+                                    <i data-lucide="file-up" class="w-4 h-4"></i>
+                                    <span class="font-bold text-xs sm:text-sm text-white">Local Document</span>
+                                </div>
+                                <p id="fileNameDisplay" class="text-[11px] text-slate-400 truncate">No file chosen (.docx, .doc, .txt, .pro)</p>
+                            </div>
+                            <input type="file" id="fileInput" class="hidden" accept=".docx,.doc,.txt,.pro,.chordpro" onchange="window.handleFileSelect(event)">
+                            <div class="flex items-center gap-2">
+                                <label for="fileInput" class="btn btn-secondary text-xs flex-1 cursor-pointer text-center">Select File</label>
+                                <button type="button" onclick="window.processLocalFile()" class="btn text-xs flex-1">📥 Load</button>
+                                <button type="button" onclick="window.clearLocalFile()" class="btn btn-danger text-xs px-2">🗑</button>
+                            </div>
+                        </div>
+
+                        <!-- Google Drive Integration Card -->
+                        <div class="card flex flex-col justify-between space-y-3">
+                            <div>
+                                <div class="flex items-center space-x-2 mb-1.5 text-sky-400">
+                                    <i data-lucide="cloud" class="w-4 h-4"></i>
+                                    <span class="font-bold text-xs sm:text-sm text-white">Google Drive Integration</span>
+                                </div>
+                                <select id="driveSelect" class="text-xs py-1 px-2">
+                                    <option value="">-- Fetching Shared Drive Songs... --</option>
+                                </select>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <button type="button" onclick="window.loadFromDrive()" class="btn text-xs flex-1">☁ Load File</button>
+                                <button type="button" onclick="window.clearDriveSelection()" class="btn btn-danger text-xs px-2">🗑</button>
+                            </div>
+                        </div>
+
+                        <div class="card flex flex-col justify-between space-y-3 sm:col-span-2">
+                            <div>
+                                <div class="flex items-center space-x-2 mb-1.5 text-emerald-400">
+                                    <i data-lucide="music" class="w-4 h-4"></i>
+                                    <span class="font-bold text-xs sm:text-sm text-white">Worship Presets Database</span>
+                                </div>
+                                <select id="presetSelect" class="text-xs py-1.5 px-2">
+                                    <option value="">-- Select Worship Preset --</option>
+                                    <option value="goodnessOfGod">Goodness of God (Key of G)</option>
+                                    <option value="wayMaker">Way Maker (Key of C)</option>
+                                    <option value="whatABeautifulName">What a Beautiful Name (Key of D)</option>
+                                    <option value="tenThousandReasons">10,000 Reasons (Key of G)</option>
+                                    <option value="buildMyLife">Build My Life (Key of G)</option>
+                                </select>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <button type="button" onclick="window.loadPresetSong()" class="btn text-xs bg-emerald-600 hover:bg-emerald-500 flex-1 font-bold">⚡ Load Preset</button>
+                                <button type="button" onclick="window.appendPresetToSetlist()" class="btn btn-secondary text-xs flex-1">➕ Append to Setlist</button>
+                            </div>
+                        </div>
+
+                        <!-- Setlist Manager Widget -->
+                        <div class="card flex flex-col justify-between space-y-3 sm:col-span-2 border-brand-500/30">
+                            <div>
+                                <div class="flex justify-between items-center mb-1.5">
+                                    <div class="flex items-center space-x-2 text-amber-400">
+                                        <i data-lucide="list-music" class="w-4 h-4"></i>
+                                        <span class="font-bold text-xs sm:text-sm text-white">Persistent Live Setlist</span>
+                                    </div>
+                                    <button type="button" onclick="window.saveCurrentToSetlist()" class="btn text-[11px] py-1 px-2.5 bg-amber-600 hover:bg-amber-500">💾 Save Active Chart</button>
+                                </div>
+                                <div id="setlistContainer" class="space-y-1.5 max-h-40 overflow-y-auto no-scrollbar pt-1">
+                                    <!-- Dynamic Setlist Items -->
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+
+                <!-- Live Mic Listener Tab Panel -->
+                <div id="tab-mic" class="tab-content hidden flex-col space-y-4 no-print" style="display: none;">
+                    <div id="micPermissionAlert" class="hidden bg-amber-950/80 border border-amber-500/40 p-3 sm:p-4 rounded-xl text-amber-200 text-xs space-y-2 shadow-lg">
+                        <div class="flex items-start space-x-2">
+                            <i data-lucide="alert-triangle" class="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5"></i>
+                            <div>
+                                <h4 class="font-bold text-xs sm:text-sm text-amber-300">Microphone Access Blocked</h4>
+                                <p class="text-amber-200/90 text-[11px] leading-relaxed">Unblock permissions in your browser bar to enable physical microphone capture.</p>
+                            </div>
+                        </div>
+                        
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-2 pt-1 font-mono text-[10px] bg-black/40 p-2.5 rounded-lg border border-amber-500/20">
+                            <div>
+                                <span class="font-bold text-amber-400 block mb-0.5">🖥️ Chrome / Edge / Mobile:</span>
+                                <p class="text-slate-300">Tap 🔒 or 🎛️ in web address bar -> set <b class="text-emerald-400">Microphone: Allow</b> -> refresh page.</p>
+                            </div>
+                            <div>
+                                <span class="font-bold text-amber-400 block mb-0.5">📱 iOS Safari:</span>
+                                <p class="text-slate-300">Tap <b class="text-white">aA</b> -> Website Settings -> set <b class="text-emerald-400">Microphone: Allow</b> -> refresh page.</p>
+                            </div>
+                        </div>
+
+                        <div id="fileProtocolNotice" class="hidden p-2 rounded bg-rose-950/80 border border-rose-500/30 text-rose-200 font-sans text-[11px]">
+                            ⚠️ <b>Local File Notice:</b> Modern mobile & desktop browsers require web hosting or local server (<code>http://127.0.0.1:5500</code>) for physical audio capture.
+                        </div>
+                    </div>
+
+                    <div class="card space-y-4">
+                        <div class="flex justify-between items-center flex-wrap gap-2">
+                            <div>
+                                <h3 class="font-bold text-sm sm:text-base text-white flex items-center space-x-2">
+                                    <i data-lucide="mic" class="w-4 h-4 sm:w-5 sm:h-5 text-emerald-400"></i>
+                                    <span>Live Microphone Chord Recognition</span>
+                                </h3>
+                                <p class="text-[11px] sm:text-xs text-slate-400">Real-time chord detection for live acoustic instruments or vocals.</p>
+                            </div>
+                            <button type="button" id="micToggleBtn" onclick="window.toggleMicListening()" class="btn text-xs bg-emerald-600 hover:bg-emerald-500 px-3 py-1.5">
+                                <i data-lucide="mic" class="w-3.5 h-3.5"></i>
+                                <span id="micBtnText">Start Listening</span>
+                            </button>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-3 items-center">
+                            <div class="md:col-span-2 bg-slate-950 p-3 sm:p-4 rounded-xl border border-slate-800 h-28 sm:h-32">
+                                <span class="text-[9px] sm:text-[10px] font-bold uppercase text-slate-400 block mb-1">Microphone Pitch Spectrum</span>
+                                <canvas id="micChromaCanvas" class="w-full h-20 sm:h-24"></canvas>
+                            </div>
+                            <div class="bg-slate-950 p-4 rounded-xl border border-slate-800 text-center space-y-1">
+                                <span class="text-[9px] sm:text-[10px] font-bold uppercase text-slate-500">Recognized Chord</span>
+                                <div id="micDetectedChord" class="text-4xl sm:text-5xl font-extrabold font-mono text-emerald-400">--</div>
+                                <span id="micConfidenceDisplay" class="text-[10px] sm:text-[11px] text-slate-500 block font-mono">Confidence: --%</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Key Signature & Capo Banner -->
+                <div class="card no-print">
+                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                        <div>
+                            <span class="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">Song Key Signature & Capo Recommendation</span>
+                            <div class="flex items-center space-x-2 sm:space-x-3 mt-1 flex-wrap gap-y-1">
+                                <span class="badge-key" id="detectedKeyDisplay">Key: Undetected</span>
+                                <span class="badge" id="detectedCapoDisplay">Capo Guide: No Capo</span>
+                            </div>
+                        </div>
+                        <div class="text-[11px] sm:text-xs text-slate-400 text-left sm:text-right font-mono">
+                            <span id="tempoDisplay" class="block text-brand-400 font-bold">Estimated Tempo: 120 BPM</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Dynamic SVG Guitar Fretboard & Chord Guide -->
+                <div class="card space-y-3 no-print">
+                    <div class="flex justify-between items-center flex-wrap gap-2">
+                        <div class="flex items-center space-x-2">
+                            <span class="font-bold text-xs sm:text-sm text-white">Detected Chord Fingerings</span>
+                            <span class="text-[10px] text-slate-400 hidden sm:inline">(Click to audition)</span>
+                        </div>
+                        <div class="flex items-center space-x-2 flex-wrap gap-y-1">
+                            <div class="flex items-center space-x-1 bg-slate-950 px-2 py-1 rounded-lg border border-slate-800 text-xs">
+                                <i data-lucide="volume-2" class="w-3.5 h-3.5 text-slate-400"></i>
+                                <select id="synthVoiceSelect" onchange="window.activeSynthVoice = this.value" class="bg-transparent border-none py-0 px-1 text-xs text-brand-400 focus:outline-none cursor-pointer font-semibold">
+                                    <option value="piano">Piano</option>
+                                    <option value="guitar">Guitar</option>
+                                    <option value="pad">Ambient Pad</option>
+                                </select>
+                            </div>
+
+                            <div class="flex bg-slate-950 p-1 rounded-lg border border-slate-800">
+                                <button type="button" class="pill-btn active px-2 py-1" id="btn-guitar" onclick="window.selectInstrument('guitar')">Guitar</button>
+                                <button type="button" class="pill-btn px-2 py-1" id="btn-piano" onclick="window.selectInstrument('piano')">Piano</button>
+                                <button type="button" class="pill-btn px-2 py-1" id="btn-ukulele" onclick="window.selectInstrument('ukulele')">Uke</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2" id="chordGrid">
+                        <div class="col-span-full text-xs text-slate-400 py-2 text-center">Load a song chart or worship preset to parse chord fingerings.</div>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Right Workspace Column (Live Stage View) -->
+            <div id="stageViewContainer" class="lg:col-span-6 space-y-3 w-full min-w-0">
+                <div class="flex justify-between items-center flex-wrap gap-2 no-print bg-slate-900/80 p-2.5 sm:p-3 rounded-xl border border-slate-800">
+                    <div class="flex items-center space-x-2">
+                        <span class="font-bold text-xs sm:text-sm text-white">Live Stage View</span>
+                        <span id="syncIndicator" class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">● Live Sync</span>
+                    </div>
+                    
+                    <!-- Stage Playback Controls -->
+                    <div class="flex items-center space-x-1 sm:space-x-2">
+                        <button type="button" onclick="window.playStageMedia()" class="btn text-xs bg-emerald-600 hover:bg-emerald-500 px-2 py-1 flex items-center space-x-1">
+                            <i data-lucide="play" class="w-3 h-3 sm:w-3.5 sm:h-3.5 pointer-events-none"></i>
+                            <span class="pointer-events-none">Play</span>
+                        </button>
+                        <button type="button" onclick="window.pauseStageMedia()" class="btn text-xs bg-amber-600 hover:bg-amber-500 px-2 py-1 flex items-center space-x-1">
+                            <i data-lucide="pause" class="w-3 h-3 sm:w-3.5 sm:h-3.5 pointer-events-none"></i>
+                            <span class="pointer-events-none">Pause</span>
+                        </button>
+                        <button type="button" onclick="window.stopStageMedia()" class="btn text-xs bg-rose-600 hover:bg-rose-500 px-2 py-1 flex items-center space-x-1">
+                            <i data-lucide="square" class="w-3 h-3 sm:w-3.5 sm:h-3.5 pointer-events-none"></i>
+                            <span class="pointer-events-none">Stop</span>
+                        </button>
+                        <span id="stageTimeTracker" class="text-[10px] sm:text-xs font-mono text-slate-400 ml-1">0:00 / 0:00</span>
+                    </div>
+                </div>
+
+                <!-- Chordify-Style Visual Beat Measure Grid Widget -->
+                <div id="chordifyGridSection" class="card space-y-2 no-print bg-slate-950/90 border-brand-500/30">
+                    <div class="flex justify-between items-center">
+                        <span class="font-bold text-xs sm:text-sm text-brand-400 flex items-center gap-1.5">
+                            <i data-lucide="grid" class="w-4 h-4"></i> Chordify 4-Beat Measure Grid
+                        </span>
+                        <span id="activeMeasureDisplay" class="text-[10px] font-mono text-slate-400">Beat Playhead: Ready</span>
+                    </div>
+                    <div id="chordifyGrid" class="grid grid-cols-2 sm:grid-cols-4 gap-2 max-h-48 overflow-y-auto p-1 no-scrollbar">
+                        <div class="col-span-full text-xs text-slate-500 py-2 text-center italic">Load a song chart to build interactive measure blocks.</div>
+                    </div>
+                </div>
+
+                <!-- Live Monospaced Sheet Reader -->
+                <pre id="output"></pre>
+
+                <!-- Sticky Transpose & Scroll Controls -->
+                <div class="sticky-controls no-print">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                        <div class="flex items-center space-x-1">
+                            <button type="button" class="btn btn-secondary text-xs px-2 py-1" onclick="window.transpose(-1)">♭ -1</button>
+                            <span class="badge text-[11px] font-mono font-bold px-2 py-1" id="shiftDisplay">Shift: 0</span>
+                            <button type="button" class="btn btn-secondary text-xs px-2 py-1" onclick="window.transpose(1)">♯ +1</button>
+                            <button type="button" class="btn btn-secondary text-xs px-1.5 py-1" onclick="window.resetTransposition()" title="Reset">Reset</button>
+                        </div>
+
+                        <div class="flex items-center space-x-1.5">
+                            <button type="button" id="scrollToggleBtn" class="btn text-xs bg-emerald-600 hover:bg-emerald-500 px-2.5 py-1" onclick="window.toggleAutoScroll()">▶ Auto-Scroll</button>
+                            <input type="range" id="scrollSpeed" min="1" max="10" value="3" class="w-12 sm:w-16 accent-brand-500" oninput="window.updateScrollSpeedDisplay()">
+                            <span id="speedValDisplay" class="text-[10px] sm:text-xs font-mono font-bold text-slate-300">3x</span>
+                        </div>
+
+                        <div class="flex items-center space-x-1">
+                            <button type="button" class="btn btn-secondary text-xs px-2 py-1" onclick="window.adjustFontSize(-1)">A-</button>
+                            <button type="button" class="btn btn-secondary text-xs px-2 py-1" onclick="window.adjustFontSize(1)">A+</button>
+                            <button type="button" class="btn btn-secondary text-xs px-2 py-1" onclick="window.copyFormattedText()">📋 Copy</button>
+                            <button type="button" class="btn btn-secondary text-xs px-2 py-1 hidden sm:inline-flex" onclick="window.exportToWord()">📄 Word</button>
+                            <button type="button" class="btn btn-secondary text-xs px-2 py-1 hidden sm:inline-flex" onclick="window.printPage()">🖨️</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Song Chart Monospaced Editor -->
+                <div class="card space-y-2 no-print">
+                    <div class="flex justify-between items-center flex-wrap gap-2">
+                        <span class="font-bold text-xs sm:text-sm text-white">Song Chart Editor (Monospaced Lines / [0:00] Timestamps)</span>
+                        <div class="flex items-center space-x-1.5">
+                            <button type="button" class="btn btn-secondary text-[10px] sm:text-[11px] py-1 px-2" onclick="window.formatEditorWithSpaces()">Align Spaces</button>
+                            <button type="button" class="btn btn-danger text-[10px] sm:text-[11px] py-1 px-2" onclick="window.clearSongEditor()">Clear</button>
+                        </div>
+                    </div>
+                    <textarea id="songInput" placeholder="Uploaded song text will reflect here automatically... or type e.g. [0:00] INTRO: C - G - Am - F"></textarea>
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+    <!-- Toast Notification Popup -->
+    <div id="toast" class="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 bg-slate-900 border border-brand-500/50 text-white px-3.5 py-2.5 rounded-xl shadow-2xl transform translate-y-20 opacity-0 transition-all duration-300 z-50 flex items-center space-x-2 pointer-events-none max-w-[90vw]">
+        <i data-lucide="info" class="w-4 h-4 text-brand-400 flex-shrink-0"></i>
+        <span id="toastMsg" class="text-xs font-medium truncate">Notification</span>
+    </div>
+
+    <!-- JavaScript Application Engine -->
+    <script>
+        // Global variables initialized safely
+        window.currentShift = 0;
+        window.activeInstrument = 'guitar';
+        window.activeSynthVoice = 'piano';
+        window.isScrolling = false;
+        window.scrollAnimationFrame = null;
+        window.selectedFileObject = null;
+        window.selectedAudioFile = null;
+        window.currentAudioBlobUrl = null;
+        window.currentFontSize = 1.0;
+        window.globalAudioCtx = null;
+        window.ytPlayer = null;
+        window.ytApiReady = false;
+        window.pendingVideoId = null;
+        window.ytSyncInterval = null;
+        window.activeYtSongChart = "";
+        window.audioElementSourceNode = null;
+        window.audioAnalyserNode = null;
+        window.chordifyTilesData = [];
+
+        // Polyphonic Major/Minor Chord Templates
+        window.CHORD_TEMPLATES = (function() {
+            var templates = [];
+            var roots = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+            roots.forEach(function(root, i) {
+                var maj = new Float32Array(12);
+                maj[i] = 1.0;
+                maj[(i + 4) % 12] = 0.75;
+                maj[(i + 7) % 12] = 0.85;
+                templates.push({ name: root, vector: maj });
+
+                var min = new Float32Array(12);
+                min[i] = 1.0;
+                min[(i + 3) % 12] = 0.75;
+                min[(i + 7) % 12] = 0.85;
+                templates.push({ name: root + "m", vector: min });
+            });
+            return templates;
+        })();
+
+        // Cosine Vector Similarity Chord Matcher
+        window.matchChromaToChord = function(chroma) {
+            var sumSq = 0;
+            for (var k = 0; k < 12; k++) sumSq += chroma[k] * chroma[k];
+            var norm = Math.sqrt(sumSq);
+            if (norm === 0) return "--";
+
+            var bestScore = -1;
+            var bestChord = "--";
+
+            window.CHORD_TEMPLATES.forEach(function(tmpl) {
+                var dot = 0;
+                var tmplNorm = 0;
+                for (var i = 0; i < 12; i++) {
+                    dot += (chroma[i] / norm) * tmpl.vector[i];
+                    tmplNorm += tmpl.vector[i] * tmpl.vector[i];
+                }
+                var score = dot / Math.sqrt(tmplNorm);
+                if (score > bestScore) {
+                    bestScore = score;
+                    bestChord = tmpl.name;
+                }
+            });
+
+            return bestChord;
+        };
+
+        window.getAudioContext = function() {
+            if (!window.globalAudioCtx) {
+                try {
+                    var AudioContextClass = window.AudioContext || window.webkitAudioContext;
+                    if (AudioContextClass) {
+                        window.globalAudioCtx = new AudioContextClass();
+                    }
+                } catch(e) {
+                    console.warn("AudioContext not supported in this environment:", e);
+                }
+            }
+            if (window.globalAudioCtx && window.globalAudioCtx.state === 'suspended') {
+                try { window.globalAudioCtx.resume(); } catch(e){}
+            }
+            return window.globalAudioCtx;
+        };
+
+        window.debounce = function(fn, delay) {
+            var timer = null;
+            return function () {
+                var args = arguments;
+                var context = this;
+                clearTimeout(timer);
+                timer = setTimeout(function () {
+                    fn.apply(context, args);
+                }, delay);
+            };
+        };
+
+        window.CHORD_REGEX = /\b[A-G](?:#|b)?(?:m|maj|min|dim|aug|sus|add)?\d*(?:\/[A-G](?:#|b)?)?\b/g;
+        window.SECTION_PREFIX_REGEX = /^(?:INTRO|INSTRUMENTAL|OUTRO|SOLO|INTERLUDE|BRIDGE|VERSE|CHORUS|TAG|TURNAROUND|ENDING|REFRAIN|PRE-CHORUS|HOOK|VERSE\s+\d+|CHORUS\s+\d+|PART\s+[A-Z])[\s:]*/i;
+
+        window.CHROMATIC_SHARP = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+        window.CHROMATIC_FLAT  = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"];
+        window.FLAT_EQUIVALENTS = { "Db": "C#", "Eb": "D#", "Gb": "F#", "Ab": "G#", "Bb": "A#" };
+
+        window.NOTE_TO_SEMITONE = {
+            "C": 0, "C#": 1, "Db": 1, "D": 2, "D#": 3, "Eb": 3, "E": 4, "F": 5, "F#": 6, "Gb": 6,
+            "G": 7, "G#": 8, "Ab": 8, "A": 9, "A#": 10, "Bb": 10, "B": 11
+        };
+
+        window.PRESET_SONGS = {
+            goodnessOfGod: "GOODNESS OF GOD - BETHEL MUSIC\n\n[0:00] INTRO:\n[0:00] G                       C                G\n\n[0:14] VERSE 1:\n[0:14] G                       C                G\nI love You Lord, for Your mercy never fails me\n[0:24] D/F#     Em         C              D\nAll my days, I've been held in Your hands\n[0:35]           Em               C\nFrom the moment that I wake up\n[0:42]         G  D/F#   Em\nUntil I lay my head\n[0:48] C               D               G\nI will sing of the goodness of God\n\n[0:58] CHORUS:\n[0:58] C                               G\nAll my life You have been faithful\n[1:10] C                               G        D\nAll my life You have been so, so good\n[1:22] C                               G    D/F#   Em\nWith every breath that I am able\n[1:34] C               D               G\nI will sing of the goodness of God\n\n[1:48] INSTRUMENTAL:\n[1:48] | C | G | D | Em |",
+            wayMaker: "WAY MAKER - LEELAND / SINACH\n\n[0:00] INTRO:\n[0:00] C - G - D - Em\n\n[0:15] VERSE 1:\n[0:15] C\nYou are here, moving in our midst\n[0:22] G\nI worship You, I worship You\n[0:30] D\nYou are here, working in this place\n[0:38] Em\nI worship You, I worship You\n\n[0:46] CHORUS:\n[0:46] C\nWay Maker, Miracle Worker, Promise Keeper\n[0:54] G\nLight in the darkness, my God, that is who You are\n[1:02] D                                       Em\nWay Maker, Miracle Worker, Promise Keeper",
+            whatABeautifulName: "WHAT A BEAUTIFUL NAME - HILLSONG WORSHIP\n\n[0:00] INTRO:\n[0:00] D - G - Bm - A\n\n[0:15] VERSE 1:\n[0:15] D\nYou were the Word at the beginning\n[0:22] G            Bm           A\nOne with God the Lord Most High\n[0:30] Bm          A/C#            D\nYour hidden glory in creation\n[0:38] G            Bm           A\nNow revealed in You Our Christ\n\n[0:48] CHORUS 1:\n[0:48] D\nWhat a beautiful Name it is\n[0:56] A\nWhat a beautiful Name it is\n[1:04] Bm                A            G\nThe Name of Jesus Christ my King",
+            tenThousandReasons: "10,000 REASONS (BLESS THE LORD) - MATT REDMAN\n\n[0:00] INTRO:\n[0:00] C - G - D/F# - Em - C - G - Dsus4 - D\n\n[0:16] CHORUS:\n[0:16] C            G          D        Em\nBless the Lord, O my soul, O my soul\n[0:24] C            G          Dsus4  D\nWorship His holy name\n[0:32] C        Em   C   D  Em\nSing like never before, O my soul\n[0:42] C            D          G\nI'll worship Your holy name",
+            buildMyLife: "BUILD MY LIFE - PASSION / HOUSEFIRES\n\n[0:00] INTRO:\n[0:00] G - C - G - C\n\n[0:14] VERSE 1:\n[0:14] G                        C\nWorthy of every song we could ever sing\n[0:22] G                        C\nWorthy of all the praise we could ever bring\n[0:30] G                        C\nWorthy of every breath we could ever breathe\n[0:38]            G      C\nWe live for You"
+        };
+
+        window.CHORD_DICTIONARY = {
+            guitar: {
+                "C": "x32010", "C#": "x46664", "Db": "x46664", "D": "xx0232", "D#": "x68886", "Eb": "x68886",
+                "E": "022100", "F": "133211", "F#": "244322", "Gb": "244322", "G": "320003", "G#": "466544",
+                "Ab": "466544", "A": "x02220", "A#": "x13331", "Bb": "x13331", "B": "x24442",
+                "Cm": "x35543", "Dm": "xx0231", "Em": "022000", "Fm": "133111", "F#m": "244222", "Gm": "355333",
+                "Am": "x02210", "Bm": "x24432", "C7": "x32310", "D7": "xx0212", "E7": "020100", "G7": "320001",
+                "A7": "x02020", "B7": "x21202", "Cmaj7": "x32000", "Fmaj7": "xx3210", "Gmaj7": "320002", "Dsus4": "xx0233", "Cadd9": "x32030"
+            },
+            piano: {
+                "C": "C-E-G", "C#": "C#-F-G#", "Db": "Db-F-Ab", "D": "D-F#-A", "D#": "D#-G-A#", "Eb": "Eb-G-Bb",
+                "E": "E-G#-B", "F": "F-A-C", "F#": "F#-A#-C#", "Gb": "Gb-Bb-Db", "G": "G-B-D", "G#": "G#-C-D#",
+                "Ab": "Ab-C-Eb", "A": "A-C#-E", "A#": "A#-D-F", "Bb": "Bb-D-F", "B": "B-D#-F#",
+                "Cm": "C-Eb-G", "Dm": "D-F-A", "Em": "E-G-B", "Fm": "F-Ab-C", "F#m": "F#-A-C#", "Gm": "G-Bb-D",
+                "Am": "A-C-E", "Bm": "B-D-F#", "C7": "C-E-G-Bb", "D7": "D-F#-A-C", "E7": "E-G#-B-D", "G7": "G-B-D-F"
+            },
+            ukulele: {
+                "C": "0003", "C#": "1114", "Db": "1114", "D": "2220", "D#": "3331", "Eb": "3331",
+                "E": "4442", "F": "2010", "F#": "3121", "Gb": "3121", "G": "0232", "G#": "5343",
+                "Ab": "5343", "A": "2100", "A#": "3211", "Bb": "3211", "B": "4322",
+                "Cm": "0333", "Dm": "2210", "Em": "0432", "Fm": "1013", "F#m": "2120", "Gm": "0231",
+                "Am": "2000", "Bm": "4222", "C7": "0001", "D7": "2020", "E7": "1202", "G7": "0132"
+            }
+        };
+
+        window.synth = {
+            playChord: function(chordName, voice) {
+                voice = voice || window.activeSynthVoice || 'piano';
+                try {
+                    var ctx = window.getAudioContext();
+                    if (!ctx) return;
+                    var root = chordName.split('/')[0].replace(/(m|maj|min|dim|aug|sus|add)?\d*/g, '');
+                    var isMinor = chordName.indexOf('m') !== -1 && chordName.indexOf('maj') === -1;
+                    var rootNote = root || 'C';
+                    if (window.FLAT_EQUIVALENTS[rootNote]) rootNote = window.FLAT_EQUIVALENTS[rootNote];
+                    var semitone = window.CHROMATIC_SHARP.indexOf(rootNote);
+                    if (semitone === -1) semitone = 0;
+
+                    var thirdSemitone = (semitone + (isMinor ? 3 : 4)) % 12;
+                    var fifthSemitone = (semitone + 7) % 12;
+                    var notes = [
+                        window.CHROMATIC_SHARP[semitone] + "4",
+                        window.CHROMATIC_SHARP[thirdSemitone] + "4",
+                        window.CHROMATIC_SHARP[fifthSemitone] + "4"
+                    ];
+
+                    notes.forEach(function(note, i) {
+                        var octave = parseInt(note.slice(-1), 10) || 4;
+                        var keyName = note.slice(0, -1);
+                        if (window.FLAT_EQUIVALENTS[keyName]) keyName = window.FLAT_EQUIVALENTS[keyName];
+                        var st = window.CHROMATIC_SHARP.indexOf(keyName);
+                        if (st === -1) st = 0;
+                        var freq = 440 * Math.pow(2, (st - 9 + (octave - 4) * 12) / 12);
+
+                        var now = ctx.currentTime + (i * 0.03);
+                        var osc = ctx.createOscillator();
+                        var gain = ctx.createGain();
+
+                        if (voice === 'piano') {
+                            osc.type = 'triangle';
+                            gain.gain.setValueAtTime(0, now);
+                            gain.gain.linearRampToValueAtTime(0.4, now + 0.01);
+                            gain.gain.exponentialRampToValueAtTime(0.001, now + 1.6);
+                        } else if (voice === 'guitar') {
+                            osc.type = 'sawtooth';
+                            var filter = ctx.createBiquadFilter();
+                            filter.type = 'lowpass';
+                            filter.frequency.setValueAtTime(1800, now);
+                            filter.frequency.exponentialRampToValueAtTime(250, now + 1.6);
+                            osc.connect(filter);
+                            filter.connect(gain);
+                            gain.gain.setValueAtTime(0, now);
+                            gain.gain.linearRampToValueAtTime(0.35, now + 0.008);
+                            gain.gain.exponentialRampToValueAtTime(0.0001, now + 1.28);
+                        } else {
+                            osc.type = 'sine';
+                            gain.gain.setValueAtTime(0, now);
+                            gain.gain.linearRampToValueAtTime(0.2, now + 0.3);
+                            gain.gain.linearRampToValueAtTime(0.001, now + 2.0);
+                        }
+
+                        if (voice !== 'guitar') osc.connect(gain);
+                        gain.connect(ctx.destination);
+
+                        osc.start(now);
+                        osc.stop(now + 2.1);
+                    });
+                } catch(e) {
+                    console.warn("Synth play error:", e);
+                }
+            }
+        };
+
+        window.transposeNote = function(note, semitones, preferFlats) {
+            if (window.NOTE_TO_SEMITONE[note] === undefined) return note;
+            var originalIndex = window.NOTE_TO_SEMITONE[note];
+            var newIndex = (originalIndex + semitones) % 12;
+            if (newIndex < 0) newIndex += 12;
+            var scale = preferFlats ? window.CHROMATIC_FLAT : window.CHROMATIC_SHARP;
+            return scale[newIndex];
+        };
+
+        window.transposeChord = function(chord, semitones, preferFlats) {
+            if (!chord || semitones === 0) return chord;
+
+            var parts = chord.split('/');
+            var rootPart = parts[0];
+            var bassPart = parts[1];
+
+            var rootMatch = rootPart.match(/^([A-G][#b]?)(.*)$/);
+            if (!rootMatch) return chord;
+
+            var rootNote = rootMatch[1];
+            var extension = rootMatch[2] || '';
+            var transposedRoot = window.transposeNote(rootNote, semitones, preferFlats);
+
+            var transposedBass = '';
+            if (bassPart) {
+                var bassMatch = bassPart.match(/^([A-G][#b]?)(.*)$/);
+                if (bassMatch) {
+                    transposedBass = '/' + window.transposeNote(bassMatch[1], semitones, preferFlats) + (bassMatch[2] || '');
+                } else {
+                    transposedBass = '/' + bassPart;
+                }
+            }
+
+            return transposedRoot + extension + transposedBass;
+        };
+
+        window.playStageMedia = function() {
+            var audioElement = document.getElementById('mainAudioElement');
+            if (audioElement && audioElement.src) {
+                audioElement.play();
+                document.getElementById('audioPlayBtn').innerHTML = '<i data-lucide="pause" class="w-3.5 h-3.5 pointer-events-none"></i><span class="pointer-events-none">Pause</span>';
+            }
+            if (window.ytPlayer && typeof window.ytPlayer.playVideo === 'function') {
+                window.ytPlayer.playVideo();
+                window.startYouTubeSyncTracker();
+            }
+            window.startAutoScroll();
+            window.showToast("Stage Playback Started");
+            if (window.lucide && lucide.createIcons) lucide.createIcons();
+        };
+
+        window.pauseStageMedia = function() {
+            var audioElement = document.getElementById('mainAudioElement');
+            if (audioElement) {
+                audioElement.pause();
+                document.getElementById('audioPlayBtn').innerHTML = '<i data-lucide="play" class="w-3.5 h-3.5 pointer-events-none"></i><span class="pointer-events-none">Play</span>';
+            }
+            if (window.ytPlayer && typeof window.ytPlayer.pauseVideo === 'function') {
+                window.ytPlayer.pauseVideo();
+            }
+            window.stopAutoScroll();
+            window.showToast("Stage Playback Paused");
+            if (window.lucide && lucide.createIcons) lucide.createIcons();
+        };
+
+        window.stopStageMedia = function() {
+            var audioElement = document.getElementById('mainAudioElement');
+            if (audioElement) {
+                audioElement.pause();
+                audioElement.currentTime = 0;
+                document.getElementById('audioPlayBtn').innerHTML = '<i data-lucide="play" class="w-3.5 h-3.5 pointer-events-none"></i><span class="pointer-events-none">Play</span>';
+            }
+            if (window.ytPlayer && typeof window.ytPlayer.stopVideo === 'function') {
+                window.ytPlayer.seekTo(0);
+                window.ytPlayer.pauseVideo();
+            }
+            window.stopAutoScroll();
+            
+            var lines = document.querySelectorAll('#output .stage-line');
+            lines.forEach(function(l) { l.classList.remove('active-playing-line'); });
+            document.querySelectorAll('.chordify-tile').forEach(function(t) { t.classList.remove('active-tile'); });
+            
+            document.getElementById('output').scrollTop = 0;
+            document.getElementById('stageTimeTracker').innerText = "0:00 / 0:00";
+            document.getElementById('activeMeasureDisplay').innerText = "Beat Playhead: Ready";
+            
+            window.showToast("Stage Playback Stopped");
+            if (window.lucide && lucide.createIcons) lucide.createIcons();
+        };
+
+        window.isLinePureChords = function(lineContent) {
+            if (!lineContent || !lineContent.trim()) return false;
+
+            var strippedHeader = lineContent.replace(window.SECTION_PREFIX_REGEX, '').trim();
+            if (!strippedHeader) return false;
+
+            var chordsInLine = strippedHeader.match(window.CHORD_REGEX) || [];
+            var testLine = strippedHeader;
+
+            chordsInLine.forEach
